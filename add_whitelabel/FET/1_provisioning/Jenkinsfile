@@ -1,0 +1,69 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    environment {
+        // Nutanix 登入資訊
+        NUTANIX_URL     = "https://10.64.252.1:9440"
+        NUTANIX_CREDENTIAL = credentials("nutanix-fet")
+        
+        // ETCD 登入資訊
+        ETCD_HOST       = "etcd01.pf"
+        ETCD_PORT       = 2379
+        ETCD_CREDENTIAL = credentials("prod-etcd")
+    }
+    
+    parameters {
+        string(name: 'wl_id',   defaultValue: 'x01',       description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'infratest', description: '白牌ID (小寫)', trim: true)
+        string(name: 'vm01_ip_address', defaultValue: '10.64.0.10', description: 'VM01 IPV4 Address', trim: true)
+        string(name: 'vm02_ip_address', defaultValue: '10.64.1.10', description: 'VM02 IPV4 Address', trim: true)
+    }
+
+    stages {
+        stage('Setting up nutanix virtual machine and etcd record') {
+            steps{
+                sh 'pwd && virtualenv venv'
+                sh '''#!/bin/bash
+                echo "Call nutanix api to setting up virtual machine ....."
+                echo ${wl_id}
+                echo ${wl_code}
+                echo ${vm01_ip_address}
+                echo ${vm02_ip_address}
+                
+                ls -la
+
+                # 安裝相依性套件及打印目前已經有的套件(確認有安裝成功)
+                source ${WORKSPACE}/venv/bin/activate && cd ${WORKSPACE}/add_whitelabel/FET/1_provisioning/ && pip3 install -r requirements.txt
+                pip3 freeze
+                
+                # 執行腳本
+                cd ${WORKSPACE}/add_whitelabel/FET/1_provisioning/
+                python nutanix_cloud_init.py ${wl_id} ${wl_code} ${vm01_ip_address} ${vm02_ip_address}
+                
+                # 判斷Provisioning成功再往下執行
+                if [ $? -eq 0 ] 
+                then
+                    echo "excute python script set etcd record ....."
+                    python add_etcd_record.py ${wl_id} ${wl_code} ${vm01_ip_address} ${vm02_ip_address}
+                else
+                    exit 1
+                fi
+                
+                echo "執行完成"
+                '''
+            }
+        }
+    }
+}

@@ -1,0 +1,148 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent any
+    options {
+        ansiColor('xterm')
+    }
+    // environment {
+    //     ETCD_HOST       = "etcd01.pf"
+    //     ETCD_PORT       = 2379
+    //     ETCD_CREDENTIAL = credentials("prod-etcd")
+    // }
+    
+    parameters {
+        string(name: 'wl_id',   defaultValue: 'v02',       description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'ae888', description: '白牌ID (小寫)', trim: true)
+    }
+
+    stages {
+        stage("Checkout") {
+            steps {
+                checkout(changelog: false, poll: false, scm: [
+                    $class: 'GitSCM',
+                    branches: [
+                        [name: "*/dev"],
+                    ],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [
+                        [
+                            $class: 'RelativeTargetDirectory',
+                            relativeTargetDir: 'src',
+                        ],
+                        [
+                            $class: 'CloneOption', 
+                            depth: 1,
+                            shallow: true
+                        ],
+                    ],
+                    submoduleCfg: [],
+                    userRemoteConfigs: [
+                        [
+                            url: "git@gitlab.tktech.org:it/terraform-azure-prod-tk.git",
+                            credentialsId: "xauth_gitlab_deploy"
+                        ],
+                    ],
+                ])
+            }
+        }
+        stage("Prepare environment"){
+            steps {
+
+                sh '''#!/bin/bash
+                    echo "Call Terraform to setting up azure virtual machine and etcd record ....."
+                    echo ${wl_id}
+                    echo ${wl_code}
+                    
+                    # 安裝相依性套件及打印目前已經有的套件(確認有安裝成功)
+                    cd ${WORKSPACE}/src/script
+                    python3 -m venv .venv  
+                    source .venv/bin/activate 
+                    pip3 install -r requirements.txt
+                    pip3 freeze
+                    ls -al
+                '''
+            }
+        }
+        stage('Generate Terraform file and show changes') {
+            steps {
+
+                sh '''#!/bin/bash
+
+                # 執行腳本
+                echo "Enter Python script folder..."
+                cd ${WORKSPACE}/src/script
+                source .venv/bin/activate 
+                python generate_module_config_and_modify_dns.py --wl_id=${wl_id} --wl_code=${wl_code}
+                
+                # 回到Terraform那層目錄
+                echo "Enter Terraform folder..."
+                cd ${WORKSPACE}/src
+
+
+                # 切換回master branch (因Jenkins git module在clone project會自動幫我們創建分支 ,  但不需要)
+                git checkout dev
+                git branch
+
+                # 顯示異動內容
+                terraform init 
+                terraform plan
+
+                '''
+            }
+        }
+        stage('decide continue or not') {
+            steps{
+                input "Continue to next stage?"
+            }
+
+        }
+        stage('Setting up azure virtual machine and etcd record') {
+            steps{
+                sshagent(credentials: ['xauth_gitlab_deploy']) {
+                    sh '''#!/bin/bash
+                        # 回專案目錄執行init & apply (terraform 腳本所在路徑在專案的根目錄)
+                        cd ${WORKSPACE}/src
+                        #terraform apply -auto-approve
+                        
+                        # 判斷Terraform建立成功再往下執行
+                        if [ $? -eq 0 ] 
+                        then
+                            echo "Enter Terraform folder..."
+                            cd ${WORKSPACE}/src
+
+                            # 上述流程執行完成後 commit & push
+                            git status 
+                            #git add script/config.ini mps-${wl_id}-${wl_code}.tf
+                            #git commit -m "generate $wl_id $wl_code terrafrom file by python script"
+                            #git status
+                            #git push origin master
+                        else
+                            exit 1
+                        fi       
+                        echo "執行完成"
+                    '''
+                }
+                
+            }
+        }
+    }
+    post {
+        cleanup {
+            /* clean up our workspace */
+            deleteDir()
+            
+            /* clean up tmp directory */
+            dir("${workspace}@tmp") {
+                deleteDir()
+            }
+        }
+    }
+}

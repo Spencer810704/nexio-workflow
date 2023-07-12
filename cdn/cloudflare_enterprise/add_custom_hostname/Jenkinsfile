@@ -1,0 +1,82 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent { node { label 'slave01' } }
+    environment {
+        CLOUDFLARE_ZONE_ID = "6627961564b08ba7e1512db472e1e158"
+        CLOUDFLARE_CRENTIALS  = credentials("encloudse")
+    }
+    parameters {
+        string(name: 'domain', defaultValue: 'sxzonepy.com', description: '要轉至Enterprise Plan的域名', trim: true)
+        choice(name: 'data_center', choices: ['chief', 'azure-ea', 'fet'], description: '該白牌所屬機房')
+    }
+    stages {
+        stage('add custom hostname in cloudflare enterprise zone') {
+            steps{
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/add_custom_hostname.py ${domain} ${data_center}
+                '''
+            }
+        }
+        stage('add validation dns record to cloudflare zone') {
+            steps{
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/add_txt_record.py ${domain}
+                '''
+            }
+        }
+        stage('input check to modify record') {
+            steps{
+                timeout(time: 3, unit: 'MINUTES') {
+                    input 'Click proceed to modify record or not ...'
+                }
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/cloudflare_enterprise/add_custom_hostname/modify_record.py ${domain} ${data_center}
+                '''
+            }
+        }
+    }
+}

@@ -1,0 +1,64 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    environment {
+        DEVOPS_PORTAL_URL       = "https://devops-portal.admincod88.com"
+        DEVOPS_PORTAL_BOT_TOKEN = credentials('devops-portal-bot')   
+    }
+    parameters {
+        booleanParam(name: 'initial', defaultValue: false, description: '是否進行初始化')
+        string(name: 'wl_id',   defaultValue: 'X01',    description: '白牌ID',   trim: true)
+        string(name: 'wl_code', defaultValue: 'INFRATGEST', description: '白牌Code', trim: true)
+        string(name: 'ims_allow_ip_list', defaultValue: '1.1.1.1', description: '後台IP『白』名單, 多IP用分號區隔 , ex: 1.1.1.1;22.222.13.1', trim: true)
+        string(name: 'ims_block_ip_list', defaultValue: '0.0.0.0/0', description: '後台IP『黑』名單 , 多IP用分號區隔 , ex: 0.0.0.0/0', trim: true)
+        string(name: 'ecp_block_country_list', defaultValue: 'TW;PH', description: '前台地區限制 , ex: TW;PH', trim: true)
+    }
+
+    stages {
+        stage('update whitelabel whitelist on devops-portal') {
+            steps{
+                sh '''#!/bin/bash
+                    echo $SHELL
+                    echo ${wl_id}
+                    echo ${wl_code}
+                    
+                    pwd
+                    ls -al
+                    
+                    echo "============== create virtual environment and apply =============="
+                    virtualenv venv
+                    source ${WORKSPACE}/venv/bin/activate
+
+                    echo "============== start to install other python library =============="
+                    pip install -r ${WORKSPACE}/whitelist/requirements.txt
+                    pip3 freeze
+                    
+                    echo "============== start to execute python script =============="
+                    cd ${WORKSPACE}/whitelist/
+                    
+                    if [ $initial == "true" ]
+                    then
+                        echo "Command: python whitelabel-access-rule.py $wl_id $wl_code $devops_portal_token --initial  --ims_allow_ip_list \"${ims_allow_ip_list}\" --ims_block_ip_list \"${ims_block_ip_list}\"  --ecp_block_country_list \"${ecp_block_country_list}\""
+                        python whitelabel-access-rule.py $wl_id $wl_code $devops_portal_token --initial  --ims_allow_ip_list "${ims_allow_ip_list}" --ims_block_ip_list "${ims_block_ip_list}"  --ecp_block_country_list "${ecp_block_country_list}"
+                    else
+                        echo "Command: python whitelabel-access-rule.py $wl_id $wl_code $devops_portal_token  --ims_allow_ip_list \"${ims_allow_ip_list}\" --ims_block_ip_list \"${ims_block_ip_list}\"  --ecp_block_country_list \"${ecp_block_country_list}\"" 
+                        python whitelabel-access-rule.py $wl_id $wl_code $devops_portal_token --ims_allow_ip_list "${ims_allow_ip_list}" --ims_block_ip_list "${ims_block_ip_list}"  --ecp_block_country_list "${ecp_block_country_list}"
+                    fi
+                    
+                '''
+            }
+        }
+    }
+}

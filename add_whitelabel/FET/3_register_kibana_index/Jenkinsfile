@@ -1,0 +1,47 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    parameters {
+        string(name: 'wl_id',   defaultValue: 'x01',       description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'infratest', description: '白牌ID (小寫)', trim: true)
+    }
+    environment {
+        // FET機房尚未建置ELK , 待建置完成後修改
+        KIBANA_URL         = "https://kibana-fet.admincod88.com/"
+        KIBANA_CREDENTIAL  = credentials("fet_kibana")
+    }
+
+    stages {
+        stage('register kibana index on azure') {
+            steps{
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/add_whitelabel/FET/3_register_kibana_index/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/add_whitelabel/FET/3_register_kibana_index/register_kibana_index.py ${wl_code}
+                '''
+            }
+        }
+    }
+}

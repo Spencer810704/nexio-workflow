@@ -1,0 +1,56 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent any
+    environment {
+        ETCD_HOST        = "etcd01.pf"
+        ETCD_PORT        = 2379
+        ETCD_CREDENTIALS = credentials("prod-etcd")
+    }
+    
+    parameters {
+        string(name: 'wl_id', defaultValue: 'x01', description: '白牌ID', trim: true)
+        string(name: 'wl_code', defaultValue: 'infratest', description: '白牌Code', trim: true)
+    }
+    stages {
+        stage('remove whitelabel domain in cloudflare') {
+            steps{
+                sh '''#!/bin/bash
+                    echo "============== create virtualenv and apply it  ==============="
+                    pwd 
+                    virtualenv venv
+                    echo $SHELL
+                    source ${WORKSPACE}/venv/bin/activate
+                    
+                    echo "============== start to install other python library =============="
+                    pip install -r ${WORKSPACE}/remove_whitelabel/Common/remove_etcd_record/requirements.txt
+                    pip list
+                    
+                    echo "============== start to executee python script =============="
+                    python ${WORKSPACE}/remove_whitelabel/Common/remove_etcd_record/remove_etcd_record.py ${wl_id} ${wl_code}
+                '''
+            }
+        }
+        
+
+    }
+
+    // post {
+    //     cleanup {
+    //         /* clean up our workspace */
+    //         deleteDir()
+            
+    //         /* clean up tmp directory */
+    //         dir("${workspace}@tmp") {
+    //             deleteDir()
+    //         }
+    //     }
+    // }
+}

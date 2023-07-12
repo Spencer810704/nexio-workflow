@@ -1,0 +1,46 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent any
+    options {
+        ansiColor('xterm')
+    }
+    environment {
+        DEVOPS_PORTAL_URL = "https://devops-portal.admincod88.com"
+    }
+    parameters {
+        string(name: 'wl_id', defaultValue: 'a03', description: 'wl_id', trim: true)
+        string(name: 'wl_code', defaultValue: 'yunhao', description: 'wl_code')
+        choice(name: 'fe_type', choices: ['ec', 'ims', 'app'], description: '查詢類型')
+
+    }
+    stages {
+        stage('檢查目前域名使用的CDN線路') {
+            steps{
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    /var/lib/jenkins/.pyenv/shims/virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/check_cdn_line/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/check_cdn_line/main.py ${wl_id} ${wl_code} ${fe_type}
+                '''
+                archiveArtifacts artifacts: 'result_*.txt',  fingerprint: true
+            }
+        }
+    }
+}

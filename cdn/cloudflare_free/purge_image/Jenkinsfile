@@ -1,0 +1,43 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent { node { label 'slave01' } }
+    environment {
+
+        GREYPANEL_TOKEN        = credentials("584e75ae-cd2b-4855-ab2d-440d24cb71bb")
+        CLOUDFLARE_CREDENTIALS = credentials("0154a789-ea2d-472a-8365-b76345efa2af")
+
+    }
+    parameters {
+        choice(name: 'env', choices: ['sit', 'stg', 'uat', 'prod'], description: 'Purge CDN 環境')
+        text(name: 'purge_file_list',defaultValue:'/' , description: "需要被Purge的檔案列表")
+    }
+    stages {
+        stage('register kibana index on azure') {
+            steps{
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/cloudflare_free/purge_image/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/cloudflare_free/purge_image/purge_img_cdn.py --env ${env} --purge_file_list ${purge_file_list}
+                '''
+            }
+        }
+    }
+}

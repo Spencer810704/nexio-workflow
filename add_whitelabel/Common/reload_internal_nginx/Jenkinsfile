@@ -1,0 +1,57 @@
+/* 保留建構幾個最新的建構 */
+properties([
+    buildDiscarder(
+        logRotator(
+            numToKeepStr: '15'
+        )
+    )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    environment {
+        AWX_URL   = "https://awx.admincod88.com"
+        AWX_TOKEN = credentials("prod_awx_admin_token")
+    }
+    stages {
+        stage('trigger awx reload internal nginx job') {
+            steps{
+                sh '''#!/bin/bash
+                    echo "Call AWX API to reload chief datacenter internal nginx....."
+
+                    # Launch Job
+                    response=$(curl -X POST "$AWX_URL/api/v2/job_templates/32/launch/" \
+                    -H "Authorization:  Bearer $AWX_TOKEN" \
+                    -H 'Content-Type: application/json' \
+                    -d '{
+                        "credential_passwords": {},
+                        "extra_vars": {}
+                    }' | jq )
+
+                    status=$(echo $response | jq -r '.status')
+                    check_status_url="$AWX_URL"$(echo $response | jq -r '.url')
+                    echo $check_status_url
+
+                    # 判斷AWX執行狀態
+                    while [[ "$status" != "successful" ]]
+                        do
+                        echo "sleeping for 5 seconds... and check status again"
+                        sleep 5
+                        echo "Check $check_status_url"
+                        status=$(curl -s -H 'Content-Type: application/json' -H "Authorization:  Bearer $AWX_TOKEN" $check_status_url | jq -r ".status" )
+                        echo $status
+                        if [ $status == "failed" ] || [ $status == "canceled" ]; then
+                            exit 1
+                        fi
+                    done
+
+                    echo "執行完成"
+                '''
+            }
+        }
+    }
+}

@@ -1,0 +1,75 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    parameters {
+        string(name: 'wl_id',   defaultValue: 'x01',       description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'infratest', description: '白牌ID (小寫)', trim: true)
+    }
+    stages {
+        stage('Provisioning') {
+            steps{
+                build job: 'Azure_EA_1_Provisioning',
+                    parameters: [
+                        [$class: 'StringParameterValue', name: 'wl_id', value: wl_id], 
+                        [$class: 'StringParameterValue', name: 'wl_code', value: wl_code]
+                    ]
+            }
+        }
+        
+        stage('Initialize') {
+            steps{
+                build job: 'Azure_EA_2_Initialize',
+                    parameters: [
+                        [$class: 'StringParameterValue', name: 'wl_id', value: wl_id], 
+                        [$class: 'StringParameterValue', name: 'wl_code', value: wl_code]
+                    ]
+            }
+        }
+
+        stage('Generate internal nginx') {
+            steps{
+                build job: 'Common_generate_internal_nginx',
+                    parameters: [
+                        [$class: 'StringParameterValue', name: 'wl_id', value: wl_id], 
+                        [$class: 'StringParameterValue', name: 'wl_code', value: wl_code]
+                    ]
+            }
+        }
+        
+        stage('Reload internal nginx') {
+            steps{
+                build job: 'Common_reload_internal_nginx'
+            }
+        }
+
+        stage('Register kibana index') {
+            steps{
+                build job: 'Azure_EA_3_Register_kibana_index',
+                    parameters: [
+                        [$class: 'StringParameterValue', name: 'wl_id', value: wl_id], 
+                        [$class: 'StringParameterValue', name: 'wl_code', value: wl_code]
+                    ]
+            }
+        }
+
+        stage('Update nginx configuration') {
+            steps{
+                build job: 'Common_update_nginx_configuration'
+            }
+        }
+
+        
+    }
+}

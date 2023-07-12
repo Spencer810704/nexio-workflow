@@ -1,0 +1,86 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '30'
+      )
+  )
+])
+
+pipeline {
+    //agent { node { label 'slave01' } }
+    agent any
+    environment {
+        DEVOPS_PORTAL_URL       = "http://10.100.20.81"
+        DEVOPS_PORTAL_BOT_TOKEN = credentials('devops-portal-bot')
+        
+    }
+    parameters {
+        // choice(name: 'env', choices: ['local', 'sit', 'stg', 'uat', 'prod'], description: 'environment')
+        string(name: 'wl_id', defaultValue: 'a03', description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'yunhao', description: '白牌ID (小寫)', trim: true)
+        string(name: 'domain', defaultValue: 'spencertest.com', description: '要新增到Cloudflare的域名(目前不支援多個)', trim: true)
+        booleanParam(name: 'ecp', defaultValue: true, description: '設置為前台域名')
+        booleanParam(name: 'ims', defaultValue: false, description: '設置為後台域名')
+        booleanParam(name: 'app', defaultValue: false, description: '設置為APP下載頁域名')
+        // choice(name: 'datacenter', choices: ['azure', 'chief', 'fet', 'azure-wjp'], description: '選擇回源機房(CDN配置的回源CNAME不同)')
+        choice(name: 'datacenter', choices: ['azure'], description: '選擇回源機房(CDN配置的回源CNAME不同)')
+    }
+
+    stages {
+        stage('add_cloudflare_zone') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'tktech.cdn.cf.mps', passwordVariable: 'cloudflare_token', usernameVariable: 'cloudflare_account')]) {
+                    sh 'pwd && virtualenv venv'
+                    sh '''#!/bin/bash
+                    wl_type_parameters=""
+
+                    # ======================== 欄位驗證 ============================
+                    if [ "$domain" == "" ] 
+                    then
+                        echo "域名欄位為空"
+                        exit 1
+                    fi
+                    
+                    if [[ "$ecp" == false ]] && [[ "$ims" == false ]] && [[ "$app" == false ]]
+                    then
+                        echo "至少選擇一種業務設置"
+                        exit 1
+                    fi
+
+                    if [[ "$ecp" == true ]] 
+                    then
+                        wl_type_parameters="$wl_type_parameters --ecp"
+                    fi
+
+                    if [[ "$ims" == true ]] 
+                    then
+                        wl_type_parameters="$wl_type_parameters --ims"
+                    fi
+
+                    if [[ "$app" == true ]] 
+                    then
+                        wl_type_parameters="$wl_type_parameters --app"
+                    fi
+                    
+                    # ======================== 欄位驗證 ============================
+                    
+                    echo ${wl_id}
+                    echo ${wl_code}
+                    echo "wl_type_parameters: ${wl_type_parameters}"
+                    
+                    pwd
+                    ls -al
+                    
+                    # 安裝相依性套件及打印目前已經有的套件(確認有安裝成功)
+                    python3 -m venv .venv && source .venv/bin/activate && cd ${WORKSPACE}/cdn/cloudflare_free/add_zone && pip3 install -r requirements.txt
+                    pip3 freeze
+                    
+                    eval python add_cf_zone.py $wl_id $wl_code --datacenter $datacenter $wl_type_parameters --domain $domain
+                    '''
+                }    
+            }
+        }
+        
+    }
+}

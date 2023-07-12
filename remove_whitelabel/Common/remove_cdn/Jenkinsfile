@@ -1,0 +1,55 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    environment {
+        CLOUDFLARE_CRENTIALS  = credentials("encloudse")
+    }
+    parameters {
+        string(name: 'domain_list', defaultValue: 'infratest.com infratest1.com', description: '域名, 多個使用空白分隔', trim: true)
+    }
+
+    stages {
+        stage('remove whitelabel domain in cloudflare') {
+            steps{
+                sh '''#!/bin/bash
+                    echo "============== create virtualenv and apply it  ==============="
+                    pwd 
+                    virtualenv venv
+                    echo $SHELL
+                    source ${WORKSPACE}/venv/bin/activate
+
+                    echo "============== start to install other python library =============="
+                    pip install -r ${WORKSPACE}/remove_whitelabel/Common/remove_cdn/requirements.txt
+                    pip list
+
+                    echo "============== start to executee python script =============="
+                    python ${WORKSPACE}/remove_whitelabel/Common/remove_cdn/remove_cf_zone.py ${domain_list}
+                '''
+            }
+        }
+    }
+
+    // post {
+    //     cleanup {
+    //         /* clean up our workspace */
+    //         deleteDir()
+            
+    //         /* clean up tmp directory */
+    //         dir("${workspace}@tmp") {
+    //             deleteDir()
+    //         }
+    //     }
+    // }
+}

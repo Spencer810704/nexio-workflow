@@ -1,0 +1,70 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '15'
+      )
+  )
+])
+
+pipeline {
+    agent {
+        node {
+            label 'devops-ci-slave01.pf'
+        }
+    }
+    parameters {
+        string(name: 'wl_id',   defaultValue: 'x01',       description: '白牌ID (小寫)', trim: true)
+        string(name: 'wl_code', defaultValue: 'infratest', description: '白牌ID (小寫)', trim: true)
+    }
+    environment {
+        AWX_URL   = "https://awx.admincod88.com"
+        AWX_TOKEN = credentials("prod_awx_admin_token")
+    }
+    stages {
+        stage('Initialize azure virtual machines') {
+            steps{
+                sh '''#!/bin/bash
+
+                echo "Call AWX API to initial azure virtual machines....."
+                echo $wl_code
+
+                # Launch Job
+                ansible_target_host="azure_$wl_code"
+                echo "ansible target host: $ansible_target_host"
+
+                response=$(curl -X POST "$AWX_URL/api/v2/workflow_job_templates/23/launch/" \
+                -H "Authorization:  Bearer $AWX_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d '{
+                    "credential_passwords": {},
+                    "extra_vars": {
+                        "targets": "'"$ansible_target_host"'"
+                    }
+                }' | jq )
+                
+                status=$(echo $response | jq -r '.status')
+                check_status_url="$AWX_URL"$(echo $response | jq -r '.url')
+                echo $check_status_url
+
+                # 判斷AWX執行狀態
+                while [[ "$status" != "successful" ]]
+                do
+                    echo "sleeping for 20 seconds... and check status again"
+                    sleep 20
+                    echo "Check $check_status_url"
+                    status=$(curl -s -H 'Content-Type: application/json' -H "Authorization:  Bearer $AWX_TOKEN" $check_status_url | jq -r ".status" )
+                    echo $status
+                    if [ $status == "failed" ] || [ $status == "canceled" ]; then
+                        exit 1
+                    fi
+                done
+
+                echo "執行完成"
+
+                '''
+               
+            }
+        }
+    }
+}

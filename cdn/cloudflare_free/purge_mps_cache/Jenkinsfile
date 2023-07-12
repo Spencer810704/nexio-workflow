@@ -1,0 +1,44 @@
+/* 保留建構幾個最新的建構 */
+properties([
+  buildDiscarder(
+      logRotator(
+          numToKeepStr: '30'
+      )
+  )
+])
+
+pipeline {
+    agent any
+    environment {
+        // CLOUDFLARE_CREDENTIALS = credentials("0154a789-ea2d-472a-8365-b76345efa2af")
+        DEVOPS_PORTAL_URL       = "http://10.100.20.81"
+        DEVOPS_PORTAL_BOT_TOKEN = credentials('devops-portal-bot')
+    }
+    parameters {
+        choice(name: 'env', choices: ['prod'], description: 'Purge CDN 環境')
+        string(name: 'wl_id',defaultValue:'k36prov' , description: "需要被Purge的白牌")
+    }
+    stages {
+        stage('find wl domain through the wl_id and then purge') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'tktech.cdn.cf.mps', passwordVariable: 'cloudflare_token', usernameVariable: 'cloudflare_account')]) {
+                sh '''#!/bin/bash
+                    pwd
+                    echo $SHELL
+                    
+                    echo "============== start to create virtual environment =============="
+                    virtualenv venv
+                    
+                    echo "============== start to install other python library =============="
+                    source ${WORKSPACE}/venv/bin/activate 
+                    pip install -r ${WORKSPACE}/cdn/cloudflare_free/purge_mps_cache/requirements.txt
+                    
+                    echo "============== start to execute python script =============="
+                    pip list
+                    python ${WORKSPACE}/cdn/cloudflare_free/purge_mps_cache/purge_cache.py --wl_id ${wl_id}
+                '''
+                }
+            }
+        }
+    }
+}
